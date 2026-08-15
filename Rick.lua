@@ -3,6 +3,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
 
 -- Создаем интерфейс (ScreenGui)
 local screenGui = Instance.new("ScreenGui")
@@ -14,7 +15,7 @@ screenGui.Parent = playerGui
 local button = Instance.new("TextButton")
 button.Name = "TeleportButton"
 button.Size = UDim2.new(0, 140, 0, 50)
-button.Position = UDim2.new(0.5, -70, 0.8, -25) -- Начальная позиция
+button.Position = UDim2.new(0.5, -70, 0.8, -25)
 button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 button.TextColor3 = Color3.fromRGB(0, 0, 0)
 button.Text = "Teleport Behind"
@@ -101,7 +102,7 @@ local function getClosestPlayer()
 end
 
 --------------------------------------------------------------------------------
--- ТЕЛЕПОРТАЦИЯ И ПОВОРОТ
+-- ТЕЛЕПОРТАЦИЯ
 --------------------------------------------------------------------------------
 local isCooldown = false
 
@@ -118,11 +119,16 @@ button.MouseButton1Click:Connect(function()
 			local myHRP = myCharacter.HumanoidRootPart
 			local targetHRP = closestPlayer.Character.HumanoidRootPart
 
-			-- Позиция в 3 студах позади цели
-			local targetPos = targetHRP.CFrame * Vector3.new(0, 0, 3)
-			
-			-- Поворачиваем нашего персонажа лицом к HumanoidRootPart цели
-			myHRP.CFrame = CFrame.lookAt(targetPos, targetHRP.Position)
+			-- 1. Позиция на 3 студа сзади, ориентация совпадает с ориентацией цели
+			local targetCFrame = targetHRP.CFrame
+			local teleportCFrame = targetCFrame * CFrame.new(0, 0, 3)
+
+			-- 2. Телепортируем персонажа (теперь он точно смотрит в спину игроку)
+			myHRP.CFrame = teleportCFrame
+
+			-- 3. Ставим камеру сзади нашего персонажа и направляем её прямо на цель
+			local camPosition = teleportCFrame * CFrame.new(0, 2, 4).Position
+			camera.CFrame = CFrame.lookAt(camPosition, targetHRP.Position)
 		end
 	end
 
