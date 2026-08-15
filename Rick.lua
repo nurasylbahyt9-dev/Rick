@@ -1,131 +1,132 @@
-
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
 
--- Настройки
-local TELEPORT_RANGE = 50   -- Максимальная дистанция поиска
-local COOLDOWN = 3          -- Задержка между телепортами (сек)
+-- Создаем интерфейс (ScreenGui)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TeleportGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
 
-local canTeleport = true
-local button = script.Parent
+-- Создаем белую кнопку
+local button = Instance.new("TextButton")
+button.Name = "TeleportButton"
+button.Size = UDim2.new(0, 140, 0, 50)
+button.Position = UDim2.new(0.5, -70, 0.8, -25) -- Начальная позиция
+button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+button.TextColor3 = Color3.fromRGB(0, 0, 0)
+button.Text = "Teleport Behind"
+button.TextSize = 15
+button.Font = Enum.Font.SourceSansBold
+button.Parent = screenGui
 
--- Визуальное отображение кулдауна
-local function updateButtonText(seconds)
-    if seconds > 0 then
-        button.Text = "⏳ " .. seconds .. "с"
-        button.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-    else
-        button.Text = "🔫 Телепорт"
-        button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    end
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 8)
+uiCorner.Parent = button
+
+--------------------------------------------------------------------------------
+-- ЛОГИКА ПЕРЕТАСКИВАНИЯ КНОПКИ (DRAGGABLE)
+--------------------------------------------------------------------------------
+local dragging = false
+local dragInput, dragStart, startPos
+
+local function update(input)
+	local delta = input.Position - dragStart
+	button.Position = UDim2.new(
+		startPos.X.Scale, 
+		startPos.X.Offset + delta.X, 
+		startPos.Y.Scale, 
+		startPos.Y.Offset + delta.Y
+	)
 end
 
--- Функция поиска ближайшего игрока
-local function getNearestPlayer()
-    local nearest = nil
-    local minDist = TELEPORT_RANGE
-    
-    for _, otherPlayer in ipairs(Players:GetPlayers()) do
-        if otherPlayer ~= player then
-            local otherChar = otherPlayer.Character
-            if otherChar and otherChar:FindFirstChild("HumanoidRootPart") then
-                local otherPos = otherChar.HumanoidRootPart.Position
-                local myPos = humanoidRootPart.Position
-                local dist = (myPos - otherPos).Magnitude
-                
-                if dist < minDist then
-                    minDist = dist
-                    nearest = otherChar
-                end
-            end
-        end
-    end
-    
-    return nearest
+button.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = button.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+button.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		update(input)
+	end
+end)
+
+--------------------------------------------------------------------------------
+-- ПОИСК БЛИЖАЙШЕГО ИГРОКА
+--------------------------------------------------------------------------------
+local function getClosestPlayer()
+	local myCharacter = localPlayer.Character
+	if not myCharacter or not myCharacter:FindFirstChild("HumanoidRootPart") then
+		return nil
+	end
+
+	local myPos = myCharacter.HumanoidRootPart.Position
+	local closestPlayer = nil
+	local shortestDistance = math.huge
+
+	for _, otherPlayer in ipairs(Players:GetPlayers()) do
+		if otherPlayer ~= localPlayer then
+			local otherChar = otherPlayer.Character
+			if otherChar and otherChar:FindFirstChild("HumanoidRootPart") and otherChar:FindFirstChildOfClass("Humanoid") then
+				local humanoid = otherChar:FindFirstChildOfClass("Humanoid")
+				if humanoid.Health > 0 then
+					local distance = (otherChar.HumanoidRootPart.Position - myPos).Magnitude
+					if distance < shortestDistance then
+						shortestDistance = distance
+						closestPlayer = otherPlayer
+					end
+				end
+			end
+		end
+	end
+
+	return closestPlayer
 end
 
--- Функция телепортации за спину
-local function teleportBehind(targetChar)
-    if not targetChar then return false end
-    
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then return false end
-    
-    -- Получаем направление взгляда цели
-    local targetLookVector = targetRoot.CFrame.LookVector
-    local behindPosition = targetRoot.Position - targetLookVector * 3
-    behindPosition = behindPosition + Vector3.new(0, 2, 0)
-    
-    -- Телепортируем игрока
-    humanoidRootPart.CFrame = CFrame.new(behindPosition)
-    
-    -- Эффект искр
-    local attachment = Instance.new("Attachment")
-    attachment.Parent = humanoidRootPart
-    
-    local particle = Instance.new("ParticleEmitter")
-    particle.Parent = attachment
-    particle.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-    particle.Lifetime = NumberRange.new(0.5)
-    particle.Rate = 200
-    particle.SpreadAngle = Vector2.new(360, 360)
-    particle.VelocityInheritance = 0
-    particle.Enabled = true
-    
-    task.wait(0.3)
-    particle.Enabled = false
-    task.wait(0.5)
-    particle:Destroy()
-    attachment:Destroy()
-    
-    return true
-end
+--------------------------------------------------------------------------------
+-- ТЕЛЕПОРТАЦИЯ И ПОВОРОТ
+--------------------------------------------------------------------------------
+local isCooldown = false
 
--- Обработка нажатия на кнопку
 button.MouseButton1Click:Connect(function()
-    if not canTeleport then
-        print("Кулдаун!")
-        return
-    end
-    
-    canTeleport = false
-    updateButtonText(COOLDOWN)
-    
-    local target = getNearestPlayer()
-    if target then
-        local success = teleportBehind(target)
-        if success then
-            print("Телепортировался за " .. target.Parent.Name)
-            -- Визуальный фидбек
-            button.Text = "✅ Готово!"
-            task.wait(0.5)
-        end
-    else
-        print("Игроков рядом нет")
-        button.Text = "❌ Нет цели"
-        task.wait(0.8)
-    end
-    
-    -- Обратный отсчёт кулдауна
-    for i = COOLDOWN - 1, 0, -1 do
-        updateButtonText(i)
-        task.wait(1)
-    end
-    
-    canTeleport = true
-    updateButtonText(0)
-end)
+	if isCooldown then return end
+	isCooldown = true
 
--- Обновление персонажа при респавне
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-end)
+	button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
 
--- Инициализация кнопки
-updateButtonText(0)
-print("Кнопка телепорта загружена! Нажмите на неё.")
+	local myCharacter = localPlayer.Character
+	if myCharacter and myCharacter:FindFirstChild("HumanoidRootPart") then
+		local closestPlayer = getClosestPlayer()
+		if closestPlayer and closestPlayer.Character and closestPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			local myHRP = myCharacter.HumanoidRootPart
+			local targetHRP = closestPlayer.Character.HumanoidRootPart
+
+			-- Позиция в 3 студах позади цели
+			local targetPos = targetHRP.CFrame * Vector3.new(0, 0, 3)
+			
+			-- Поворачиваем нашего персонажа лицом к HumanoidRootPart цели
+			myHRP.CFrame = CFrame.lookAt(targetPos, targetHRP.Position)
+		end
+	end
+
+	task.wait(1)
+	button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	isCooldown = false
+end)
